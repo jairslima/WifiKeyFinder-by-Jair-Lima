@@ -52,6 +52,18 @@ class TestWlanServiceParsing(unittest.TestCase):
         self.assertEqual(res.status, WlanStatus.SUCCESS)
         self.assertEqual(res.profiles, ["Office_Network", "HomeWiFi_2.4G"])
 
+    def test_parse_profiles_language_independent_fallback(self) -> None:
+        raw_other_lang = (
+            "\nProfili sull'interfaccia Wi-Fi:\n\n"
+            "Profili utente\n"
+            "-------------\n"
+            "    Tutti i profili utente : Rete_Ufficio_5G\n"
+            "    Tutti i profili utente : Casa_Italia\n"
+        )
+        res = WlanService.parse_profiles_output(0, raw_other_lang)
+        self.assertEqual(res.status, WlanStatus.SUCCESS)
+        self.assertEqual(res.profiles, ["Rete_Ufficio_5G", "Casa_Italia"])
+
     def test_parse_profiles_empty_saved_list(self) -> None:
         raw_empty = (
             "\nPerfis na interface Wi-Fi:\n\n"
@@ -80,6 +92,8 @@ class TestWlanServiceParsing(unittest.TestCase):
         raw_detail = (
             "\nPerfil Casa_5G na interface Wi-Fi:\n"
             "=======================================================================\n\n"
+            "Informações do perfil\n"
+            "    Modo de conexão        : Conectar automaticamente\n"
             "Configurações de conectividade\n"
             "    Número de SSIDs        : 1\n"
             '    Nome do SSID           : "Casa_5G"\n'
@@ -94,11 +108,14 @@ class TestWlanServiceParsing(unittest.TestCase):
         self.assertEqual(det.ssid, "Casa_5G")
         self.assertEqual(det.auth_type, "WPA2-Personal")
         self.assertEqual(det.cipher_type, "CCMP")
+        self.assertEqual(det.connection_mode, "Conectar automaticamente")
         self.assertEqual(det.password, "Senha:Com:DoisPontos#2026")
 
     def test_parse_profile_detail_with_password_en_us(self) -> None:
         raw_detail_en = (
             "\nProfile Office_Network on interface Wi-Fi:\n"
+            "Profile information\n"
+            "    Connection mode        : Connect automatically\n"
             "Connectivity settings\n"
             '    SSID name              : "Office_Network"\n'
             "Security settings\n"
@@ -111,6 +128,7 @@ class TestWlanServiceParsing(unittest.TestCase):
             "Office_Network", 0, raw_detail_en
         )
         self.assertEqual(det.status, WlanStatus.SUCCESS)
+        self.assertEqual(det.connection_mode, "Connect automatically")
         self.assertEqual(det.password, "MySecretKey!99")
 
     def test_parse_profile_detail_open_network_no_password(self) -> None:
@@ -177,6 +195,7 @@ class TestWifiKeyFinderGui(unittest.TestCase):
             # 1) Primeira rede ("Casa_Fibra_5G") possui senha salva
             app.load_profile_details("Casa_Fibra_5G")
             self.assertEqual(app.ssid_var.get(), "Casa_Fibra_5G")
+            self.assertEqual(app.conn_mode_var.get(), "Conectar automaticamente")
             # REGRA DE SEGURANÇA: Senha NUNCA aparece por padrão sem clique
             self.assertFalse(app.is_password_visible)
             self.assertEqual(app.password_display_var.get(), MASKED_VALUE)
@@ -186,8 +205,8 @@ class TestWifiKeyFinderGui(unittest.TestCase):
             self.assertTrue(app.is_password_visible)
             self.assertEqual(app.password_display_var.get(), "Familia@2026#Segura!")
 
-            # Ao clicar novamente, oculta a senha
-            app.toggle_password_visibility()
+            # Pressionar Esc quando a senha está visível deve ocultá-la
+            app._on_escape()
             self.assertFalse(app.is_password_visible)
             self.assertEqual(app.password_display_var.get(), MASKED_VALUE)
 
@@ -197,6 +216,12 @@ class TestWifiKeyFinderGui(unittest.TestCase):
             self.assertEqual(app.password_display_var.get(), MASKED_VALUE)
             app.toggle_password_visibility()
             self.assertEqual(app.password_display_var.get(), "PãoDeQueijoComCafé99")
+
+            # Testar filtro de busca e limpeza
+            app.search_var.set("Café")
+            self.assertEqual(app.filtered_profiles, ["Café & Pão Visitantes"])
+            app.clear_filter()
+            self.assertEqual(len(app.filtered_profiles), 3)
 
             # 3) Terceira rede ("Aeroporto_WiFi_Aberto") sem senha salva localmente
             app.load_profile_details("Aeroporto_WiFi_Aberto")

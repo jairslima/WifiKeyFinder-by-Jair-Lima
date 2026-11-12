@@ -26,7 +26,7 @@ O aplicativo é dividido em duas camadas desacopladas dentro do pacote principal
 
 1. **Camada de Leitura de Perfis (`wlan_service.py`):**
    - Invoca `%SystemRoot%\System32\netsh.exe` (caminho absoluto resolvido via variável de ambiente `SystemRoot` para mitigar sequestro de PATH) através de `subprocess.run([...], shell=False, creationflags=CREATE_NO_WINDOW)`.
-   - **Listagem de redes:** Executa `netsh wlan show profiles` e extrai os nomes dos perfis (suportando Windows em Português, Inglês, Espanhol e outros idiomas através do parsing estruturado de linhas ` : ` na seção de perfis de usuários, além de fallback independente de idioma).
+   - **Listagem de redes:** Executa `netsh wlan show profiles` e extrai os nomes dos perfis (suportando Windows em Português, Inglês, Espanhol, Francês, Alemão, Italiano e fallback independente de idioma).
    - **Leitura de detalhes e senha:** Ao selecionar um perfil, executa `netsh wlan show profile name=<nome> key=clear` passando os argumentos como lista (nunca com `shell=True`, impedindo qualquer injeção de comando mesmo em SSIDs com caracteres especiais).
    - **Tratamento de encoding e acentuação (UTF-8 / CP850 / CP1252):** O `netsh` no Windows frequentemente emite saída na página de código OEM do console (`cp850` no Windows PT-BR) ou `utf-8`. O decodificador tenta `utf-8` estrito e faz fallback inteligente para a página de código OEM do sistema (`ctypes.windll.kernel32.GetOEMCP()`) e `cp1252`, preservando perfeitamente SSIDs e senhas com acentos (`ç`, `ã`, `é`, emojis, etc.).
    - **Classificação clara de estados e erros:**
@@ -38,9 +38,9 @@ O aplicativo é dividido em duas camadas desacopladas dentro do pacote principal
 
 2. **Camada de Interface Gráfica (`app.py`):**
    - Layout dividido em dois painéis:
-     - **Esquerda:** Lista pesquisável de redes Wi-Fi salvas no PC + botão "Atualizar lista".
-     - **Direita:** Painel de detalhes da rede selecionada (Nome da rede / SSID, Tipo de autenticação/segurança, Senha mascarada por padrão com `••••••••`, botão **"Mostrar senha"** / **"Ocultar senha"**, e botão **"Copiar senha"** com limpeza automática opcional ou feedback visual claro).
-   - Ao trocar de rede selecionada, a senha volta automaticamente para o estado **oculto** por segurança (evitando exposição acidental na tela).
+     - **Esquerda:** Lista pesquisável de redes Wi-Fi salvas no PC + botão "Limpar" filtro + botão "Atualizar (F5)".
+     - **Direita:** Painel de detalhes da rede selecionada (Nome da rede / SSID com botão "Copiar nome", Tipo de autenticação/segurança, Modo de conexão, Senha mascarada por padrão com `••••••••••••••••`, botão **"Mostrar senha"** / **"Ocultar senha"**, botão **"Copiar senha"** e opção de limpeza automática da área de transferência após 30 segundos).
+   - Ao trocar de rede selecionada ou pressionar `Esc`, a senha volta automaticamente para o estado **oculto** por segurança (evitando exposição acidental na tela).
    - Identidade visual "by Jair Lima" presente nos 3 locais exigidos: título da janela, cabeçalho/rodapé visível na tela e docstring do módulo principal.
 
 ## Estrutura de Pastas
@@ -50,7 +50,7 @@ WifiKeyFinder-by-Jair-Lima/
 ├── wlan_service.py         # Serviço de leitura e parsing seguro do netsh wlan
 ├── tests/
 │   ├── __init__.py
-│   └── test_wlan_service.py # Testes unitários abrangentes (PT-BR, EN-US, UTF-8/CP850, erros)
+│   └── test_wlan_service.py # Testes unitários abrangentes (PT-BR, EN-US, UTF-8/CP850, GUI, erros)
 ├── LICENSE                 # Licença MIT (Copyright (c) 2026 Jair Lima)
 ├── README.md               # Documentação pública com seção detalhada de Segurança
 ├── PROJECT.md              # Plano e documentação técnica de continuidade
@@ -82,29 +82,17 @@ WifiKeyFinder-by-Jair-Lima/
   Copy-Item "dist\WiFi Key Finder by Jair Lima.exe" "$env:USERPROFILE\bin\WiFi Key Finder by Jair Lima.exe" -Force
   ```
 
-## Plano de Testes
-1. **Testes Unitários Automatizados (`tests/test_wlan_service.py`):**
-   - Extração de lista de perfis em Windows PT-BR (`Todos os Perfis de Usuários : ...`) e EN-US (`All User Profile : ...`).
-   - Extração de nomes de redes contendo espaços, dois-pontos (`Rede: Casa`), acentuação (`Café & Pão 5G`) e caracteres especiais.
-   - Extração de senha (`Conteúdo da Chave` / `Key Content`) quando presente.
-   - Tratamento de rede aberta ou perfil sem senha salva localmente (`Conteúdo da Chave` ausente).
-   - Tratamento de erro quando o serviço `wlansvc` não está rodando ou não há adaptador Wi-Fi no PC (`Não há nenhuma interface sem fio no sistema`).
-   - Tratamento de permissão negada (`Elevação necessária` / `acesso negado`).
-   - Decodificação resiliente de bytes em `utf-8`, `cp850` e `cp1252`.
-   - Verificação estática de segurança: garantia de que `netsh.exe` é chamado com caminho absoluto do `SystemRoot` e `shell=False`.
-2. **Teste Real no Ambiente Windows:**
-   - Execução direta do serviço e da GUI (`python app.py --check` e inicialização real da janela) contra o sistema operacional atual, validando o comportamento real do `netsh wlan` na máquina e simulando também o carregamento de perfis na GUI.
-
-## Plano de Autoaperfeiçoamento
-Após a implementação da v1.0 e o primeiro commit/push:
-1. Executar `audit-vulnerabilidades.py` e revisar qualquer alerta estático (Bandit / regex).
-2. Revisar criticamente o código quanto a:
-   - Segurança do caminho do executável `netsh.exe` (evitar resolução no diretório atual).
-   - Comportamento da área de transferência (limpeza ou feedback visual, bloqueio do botão copiar quando não há senha).
-   - Usabilidade por teclado (atalhos `Ctrl+C`, `F5` para atualizar, `Esc`, filtro de busca instantâneo).
-   - Tratamento de perfis com dois-pontos (`:`) no próprio SSID.
-3. Aplicar as melhorias identificadas em uma segunda rodada (v1.1) com testes adicionais e novo commit/push.
+## Histórico de Autoaperfeiçoamento (v1.0 -> v1.1)
+- **v1.0.0:** Implementação inicial completa com leitura via `%SystemRoot%\System32\netsh.exe`, interface Tkinter, ocultação de senha por padrão, testes unitários e auditoria limpa (`0 alto, 0 médio, 0 baixo`).
+- **v1.1.0 (Rodada de Autoaperfeiçoamento):**
+  - Adicionada limpeza automática opcional da área de transferência 30 segundos após copiar uma senha (protegendo contra esquecimento da senha no `Ctrl+V`).
+  - Adicionado cache em memória por sessão ao clicar entre perfis (tornando a navegação instantânea na lista e limpando ao pressionar `F5`).
+  - Adicionado botão "Copiar nome" para o SSID, botão "Limpar" para o filtro de busca e exibição do "Modo de conexão" do perfil.
+  - Adicionados atalhos de teclado (`Ctrl+F` para buscar, `Esc` para limpar filtro ou ocultar senha visível, `F5` para atualizar, `Ctrl+C` para copiar senha).
+  - Adicionado fallback independente de idioma para listagem de perfis em versões do Windows fora dos idiomas principais.
 
 ## Estado Atual e Próximos Passos
-- **Estado Atual:** Em implementação inicial (Passo 1 concluído).
-- **Pendências / Decisões Futuras:** Ícone personalizado (`.ico`) opcional caso o Jair deseje adicionar uma arte específica no futuro.
+- **Estado Atual:** Concluído (v1.1.0), testado (14 testes automatizados passando + validação no Windows), auditado pelo `audit-vulnerabilidades.py` com **0 alertas (0 alto, 0 médio, 0 baixo)**, empacotado e instalado em `C:\Users\jairs\bin\WiFi Key Finder by Jair Lima.exe` (com atalho na Área de Trabalho), e publicado no GitHub em `https://github.com/jairslima/WifiKeyFinder-by-Jair-Lima`.
+- **Pendências / Decisões que dependem do Jair:**
+  - Definição de um ícone personalizado (`.ico`) caso o Jair queira substituir o ícone padrão do executável em uma versão futura.
+  - Caso o Jair queira testar em um notebook com placa Wi-Fi física além deste PC desktop (que opera apenas via cabo Ethernet `Realtek PCIe GbE`), basta executar `WiFi Key Finder by Jair Lima.exe`.

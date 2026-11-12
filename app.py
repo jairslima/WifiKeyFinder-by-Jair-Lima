@@ -1,4 +1,4 @@
-"""WiFi Key Finder by Jair Lima (v1.0.0)
+"""WiFi Key Finder by Jair Lima (v1.1.0)
 
 Utilitário desktop open source para Windows que exibe ao próprio usuário logado
 as redes Wi-Fi salvas no computador e as respectivas senhas gravadas nos perfis locais
@@ -27,8 +27,9 @@ from wlan_service import (
 )
 
 APP_TITLE = "WiFi Key Finder by Jair Lima"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.1.0"
 MASKED_VALUE = "•" * 16
+CLIPBOARD_AUTO_CLEAR_MS = 30_000
 
 
 def enable_high_dpi() -> None:
@@ -64,7 +65,8 @@ def build_demo_service() -> WlanService:
             "-------------------\n"
             "    Versão                : 1\n"
             "    Tipo                   : LAN sem Fio\n"
-            "    Nome                   : Casa_Fibra_5G\n\n"
+            "    Nome                   : Casa_Fibra_5G\n"
+            "    Modo de conexão        : Conectar automaticamente\n\n"
             "Configurações de conectividade\n"
             "---------------------\n"
             "    Número de SSIDs        : 1\n"
@@ -79,6 +81,8 @@ def build_demo_service() -> WlanService:
         "name=Café & Pão Visitantes": (
             "\nPerfil Café & Pão Visitantes na interface Wi-Fi:\n"
             "=======================================================================\n\n"
+            "Informações do perfil\n"
+            "    Modo de conexão        : Conectar manualmente\n"
             "Configurações de conectividade\n"
             '    Nome do SSID           : "Café & Pão Visitantes"\n'
             "Configurações de segurança\n"
@@ -90,6 +94,8 @@ def build_demo_service() -> WlanService:
         "name=Aeroporto_WiFi_Aberto": (
             "\nPerfil Aeroporto_WiFi_Aberto na interface Wi-Fi:\n"
             "=======================================================================\n\n"
+            "Informações do perfil\n"
+            "    Modo de conexão        : Conectar manualmente\n"
             "Configurações de conectividade\n"
             '    Nome do SSID           : "Aeroporto_WiFi_Aberto"\n'
             "Configurações de segurança\n"
@@ -121,15 +127,18 @@ class WifiKeyFinderApp:
         self.service = service or WlanService()
 
         self.root.title(APP_TITLE)
-        self.root.geometry("840x520")
-        self.root.minsize(720, 440)
+        self.root.geometry("880x550")
+        self.root.minsize(740, 460)
         self.root.configure(bg="#F5F7FA")
 
         self.all_profiles: List[str] = []
         self.filtered_profiles: List[str] = []
+        self. details_cache: Dict[str, ProfileDetailResult] = {}
         self.current_detail: Optional[ProfileDetailResult] = None
         self.is_password_visible: bool = False
+        self._last_copied_value: Optional[str] = None
         self._feedback_after_id: Optional[str] = None
+        self._clipboard_clear_after_id: Optional[str] = None
 
         self._configure_styles()
         self._build_ui()
@@ -178,7 +187,7 @@ class WifiKeyFinderApp:
             "FieldValue.TLabel",
             background="#FFFFFF",
             foreground="#0F172A",
-            font=("Segoe UI", 11),
+            font=("Segoe UI", 10),
         )
         style.configure(
             "Footer.TLabel",
@@ -209,8 +218,8 @@ class WifiKeyFinderApp:
         # Corpo principal (2 colunas)
         body = ttk.Frame(self.root, style="Main.TFrame", padding=(16, 14, 16, 8))
         body.pack(fill="both", expand=True)
-        body.columnconfigure(0, weight=2, minsize=260)
-        body.columnconfigure(1, weight=3, minsize=380)
+        body.columnconfigure(0, weight=2, minsize=280)
+        body.columnconfigure(1, weight=3, minsize=400)
         body.rowconfigure(0, weight=1)
 
         # --- COLUNA ESQUERDA: Lista de Redes Salvas ---
@@ -243,7 +252,7 @@ class WifiKeyFinderApp:
         )
         self.refresh_btn.grid(row=0, column=1, sticky="e")
 
-        # Campo de filtro rápido
+        # Campo de filtro rápido com botão Limpar
         search_frame = tk.Frame(left_card, bg="#FFFFFF")
         search_frame.grid(row=1, column=0, sticky="ew", pady=(0, 8))
         search_frame.columnconfigure(1, weight=1)
@@ -260,6 +269,14 @@ class WifiKeyFinderApp:
         self.search_var.trace_add("write", lambda *_: self._apply_filter())
         self.search_entry = ttk.Entry(search_frame, textvariable=self.search_var)
         self.search_entry.grid(row=0, column=1, sticky="ew")
+
+        self.clear_search_btn = ttk.Button(
+            search_frame,
+            text="Limpar",
+            width=7,
+            command=self.clear_filter,
+        )
+        self.clear_search_btn.grid(row=0, column=2, padx=(6, 0))
 
         # Listbox com Scrollbar
         list_container = tk.Frame(left_card, bg="#FFFFFF")
@@ -317,14 +334,27 @@ class WifiKeyFinderApp:
             right_card,
             text="Detalhes da Rede Selecionada",
             style="SectionTitle.TLabel",
-        ).grid(row=0, column=0, sticky="w", pady=(0, 14))
+        ).grid(row=0, column=0, sticky="w", pady=(0, 12))
 
-        # Nome da Rede (SSID)
+        # Nome da Rede (SSID) + botão Copiar nome
+        ssid_header = tk.Frame(right_card, bg="#FFFFFF")
+        ssid_header.grid(row=1, column=0, sticky="ew")
+        ssid_header.columnconfigure(0, weight=1)
+
         ttk.Label(
-            right_card,
+            ssid_header,
             text="NOME DA REDE (SSID)",
             style="FieldLabel.TLabel",
-        ).grid(row=1, column=0, sticky="w")
+        ).grid(row=0, column=0, sticky="w")
+
+        self.copy_ssid_btn = ttk.Button(
+            ssid_header,
+            text="Copiar nome",
+            command=self.copy_ssid,
+            state="disabled",
+            width=14,
+        )
+        self.copy_ssid_btn.grid(row=0, column=1, sticky="e")
 
         self.ssid_var = tk.StringVar(value="Selecione uma rede na lista à esquerda")
         self.ssid_label = tk.Label(
@@ -339,29 +369,48 @@ class WifiKeyFinderApp:
             highlightbackground="#E2E8F0",
             highlightthickness=1,
         )
-        self.ssid_label.grid(row=2, column=0, sticky="ew", pady=(4, 14))
+        self.ssid_label.grid(row=2, column=0, sticky="ew", pady=(4, 12))
 
-        # Tipo de Segurança / Autenticação
+        # Metadados de Segurança e Modo de Conexão
+        meta_frame = tk.Frame(right_card, bg="#FFFFFF")
+        meta_frame.grid(row=3, column=0, sticky="ew", pady=(0, 12))
+        meta_frame.columnconfigure(0, weight=1)
+        meta_frame.columnconfigure(1, weight=1)
+
         ttk.Label(
-            right_card,
+            meta_frame,
             text="SEGURANÇA E AUTENTICAÇÃO",
             style="FieldLabel.TLabel",
-        ).grid(row=3, column=0, sticky="w")
+        ).grid(row=0, column=0, sticky="w")
+
+        ttk.Label(
+            meta_frame,
+            text="MODO DE CONEXÃO",
+            style="FieldLabel.TLabel",
+        ).grid(row=0, column=1, sticky="w", padx=(12, 0))
 
         self.auth_var = tk.StringVar(value="Não selecionado")
         self.auth_label = ttk.Label(
-            right_card,
+            meta_frame,
             textvariable=self.auth_var,
             style="FieldValue.TLabel",
         )
-        self.auth_label.grid(row=4, column=0, sticky="w", pady=(2, 14))
+        self.auth_label.grid(row=1, column=0, sticky="w", pady=(2, 0))
+
+        self.conn_mode_var = tk.StringVar(value="Não informado")
+        self.conn_mode_label = ttk.Label(
+            meta_frame,
+            textvariable=self.conn_mode_var,
+            style="FieldValue.TLabel",
+        )
+        self.conn_mode_label.grid(row=1, column=1, sticky="w", padx=(12, 0), pady=(2, 0))
 
         # Campo de Senha (sempre oculto por padrão)
         ttk.Label(
             right_card,
             text="SENHA SALVA NESTE PC",
             style="FieldLabel.TLabel",
-        ).grid(row=5, column=0, sticky="w")
+        ).grid(row=4, column=0, sticky="w")
 
         pwd_box = tk.Frame(
             right_card,
@@ -371,7 +420,7 @@ class WifiKeyFinderApp:
             padx=12,
             pady=10,
         )
-        pwd_box.grid(row=6, column=0, sticky="ew", pady=(4, 10))
+        pwd_box.grid(row=5, column=0, sticky="ew", pady=(4, 10))
         pwd_box.columnconfigure(0, weight=1)
 
         self.password_display_var = tk.StringVar(value="Nenhuma rede selecionada")
@@ -385,9 +434,9 @@ class WifiKeyFinderApp:
         )
         self.password_display_label.grid(row=0, column=0, sticky="ew")
 
-        # Botões de ação (Mostrar/Ocultar e Copiar Senha)
+        # Botões de ação (Mostrar/Ocultar e Copiar Senha) + opção de auto-limpeza
         btn_row = tk.Frame(right_card, bg="#FFFFFF")
-        btn_row.grid(row=7, column=0, sticky="ew", pady=(4, 12))
+        btn_row.grid(row=6, column=0, sticky="ew", pady=(2, 6))
 
         self.toggle_pwd_btn = ttk.Button(
             btn_row,
@@ -407,6 +456,14 @@ class WifiKeyFinderApp:
         )
         self.copy_pwd_btn.pack(side="left")
 
+        self.auto_clear_clipboard_var = tk.BooleanVar(value=True)
+        self.auto_clear_chk = ttk.Checkbutton(
+            right_card,
+            text="Limpar a senha da área de transferência automaticamente após 30 segundos",
+            variable=self.auto_clear_clipboard_var,
+        )
+        self.auto_clear_chk.grid(row=7, column=0, sticky="w", pady=(2, 10))
+
         # Banner de status / diagnóstico amigável
         self.status_banner = tk.Label(
             right_card,
@@ -416,13 +473,13 @@ class WifiKeyFinderApp:
             font=("Segoe UI", 9),
             justify="left",
             anchor="w",
-            wraplength=420,
+            wraplength=440,
             padx=12,
             pady=10,
             highlightbackground="#BFDBFE",
             highlightthickness=1,
         )
-        self.status_banner.grid(row=8, column=0, sticky="ew", pady=(8, 0))
+        self.status_banner.grid(row=8, column=0, sticky="ew", pady=(4, 0))
 
         # Rodapé com assinatura by Jair Lima e aviso de execução 100% local
         footer = ttk.Frame(self.root, style="Main.TFrame", padding=(16, 4, 16, 10))
@@ -436,7 +493,23 @@ class WifiKeyFinderApp:
 
     def _bind_shortcuts(self) -> None:
         self.root.bind("<F5>", lambda _e: self.refresh_profiles())
+        self.root.bind("<Control-f>", self._focus_search)
+        self.root.bind("<Escape>", self._on_escape)
         self.root.bind("<Control-c>", self._on_ctrl_c)
+
+    def _focus_search(self, _event: Optional[tk.Event] = None) -> None:
+        self.search_entry.focus_set()
+        self.search_entry.select_range(0, tk.END)
+
+    def _on_escape(self, _event: Optional[tk.Event] = None) -> None:
+        if self.search_var.get():
+            self.clear_filter()
+        elif self.is_password_visible:
+            self.toggle_password_visibility()
+
+    def clear_filter(self) -> None:
+        """Limpa o campo de busca de redes."""
+        self.search_var.set("")
 
     def _on_ctrl_c(self, _event: tk.Event) -> None:
         # Só copia a senha se o foco não estiver no campo de busca de texto
@@ -461,6 +534,7 @@ class WifiKeyFinderApp:
 
     def refresh_profiles(self) -> None:
         """Recarrega a lista de perfis Wi-Fi salvos no Windows."""
+        self.details_cache.clear()
         self._reset_detail_panel()
         self.count_label.configure(text="Consultando perfis do Windows...")
         self.root.update_idletasks()
@@ -483,24 +557,28 @@ class WifiKeyFinderApp:
             self.count_label.configure(text="0 redes salvas")
             self.ssid_var.set("Nenhuma rede salva encontrada")
             self.auth_var.set("Sem perfis Wi-Fi registrados")
+            self.conn_mode_var.set("Não aplicável")
             self.password_display_var.set("Sem senha disponível")
             self._set_banner(result.message, level="warning")
         elif result.status == WlanStatus.NO_INTERFACE_OR_SERVICE:
             self.count_label.configure(text="Sem adaptador Wi-Fi ativo")
             self.ssid_var.set("Interface Wi-Fi não encontrada")
             self.auth_var.set("Adaptador ausente ou serviço wlansvc parado")
+            self.conn_mode_var.set("Indisponível")
             self.password_display_var.set("Indisponível neste PC")
             self._set_banner(result.message, level="warning")
         elif result.status == WlanStatus.PERMISSION_DENIED:
             self.count_label.configure(text="Permissão negada")
             self.ssid_var.set("Permissão negada pelo Windows")
             self.auth_var.set("Acesso restrito")
+            self.conn_mode_var.set("Restrito")
             self.password_display_var.set("Bloqueado")
             self._set_banner(result.message, level="error")
         else:
             self.count_label.configure(text="Erro ao consultar redes")
             self.ssid_var.set("Erro na leitura de perfis")
             self.auth_var.set("Verifique o serviço de rede do Windows")
+            self.conn_mode_var.set("Erro")
             self.password_display_var.set("Erro")
             self._set_banner(result.message, level="error")
 
@@ -528,8 +606,10 @@ class WifiKeyFinderApp:
         self.is_password_visible = False
         self.ssid_var.set("Selecione uma rede na lista à esquerda")
         self.auth_var.set("Não selecionado")
+        self.conn_mode_var.set("Não informado")
         self.password_display_var.set("Nenhuma rede selecionada")
         self.password_display_label.configure(fg="#64748B")
+        self.copy_ssid_btn.configure(text="Copiar nome", state="disabled")
         self.toggle_pwd_btn.configure(text="Mostrar senha", state="disabled")
         self.copy_pwd_btn.configure(text="Copiar senha", state="disabled")
 
@@ -548,11 +628,20 @@ class WifiKeyFinderApp:
         """Consulta os detalhes de uma rede garantindo que a senha comece SEMPRE oculta."""
         self.is_password_visible = False
         self.toggle_pwd_btn.configure(text="Mostrar senha")
+        self.copy_pwd_btn.configure(text="Copiar senha")
+        self.copy_ssid_btn.configure(text="Copiar nome")
 
-        detail = self.service.get_profile_details(profile_name)
+        detail = self.details_cache.get(profile_name)
+        if detail is None:
+            detail = self.service.get_profile_details(profile_name)
+            self.details_cache[profile_name] = detail
+
         self.current_detail = detail
 
         self.ssid_var.set(detail.ssid or profile_name)
+        self.copy_ssid_btn.configure(state="normal")
+        self.conn_mode_var.set(detail.connection_mode or "Padrão do Windows")
+
         if detail.auth_type and detail.cipher_type and detail.cipher_type != "Não informado":
             self.auth_var.set(f"{detail.auth_type} ({detail.cipher_type})")
         else:
@@ -599,14 +688,31 @@ class WifiKeyFinderApp:
             self.password_display_var.set(MASKED_VALUE)
             self.toggle_pwd_btn.configure(text="Mostrar senha")
 
+    def copy_ssid(self) -> None:
+        """Copia o nome da rede (SSID) selecionada para a área de transferência."""
+        if not self.current_detail:
+            return
+        ssid_text = self.current_detail.ssid or self.current_detail.profile_name
+        if not ssid_text:
+            return
+        try:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(ssid_text)
+            self.root.update()
+        except tk.TclError:
+            return
+        self.copy_ssid_btn.configure(text="Copiado!")
+        self.root.after(1800, lambda: self.copy_ssid_btn.configure(text="Copiar nome"))
+
     def copy_password(self) -> None:
         """Copia a senha da rede selecionada para a área de transferência do Windows."""
         if not self.current_detail or self.current_detail.password is None:
             return
 
+        secret = self.current_detail.password
         try:
             self.root.clipboard_clear()
-            self.root.clipboard_append(self.current_detail.password)
+            self.root.clipboard_append(secret)
             self.root.update()
         except tk.TclError as exc:
             messagebox.showerror(
@@ -615,11 +721,28 @@ class WifiKeyFinderApp:
             )
             return
 
+        self._last_copied_value = secret
         self.copy_pwd_btn.configure(text="Copiado!")
-        self._set_banner(
-            f"A senha da rede '{self.current_detail.ssid}' foi copiada para a área de transferência.",
-            level="success",
-        )
+
+        if self.auto_clear_clipboard_var.get():
+            self._set_banner(
+                f"A senha da rede '{self.current_detail.ssid}' foi copiada (será limpa da área de transferência em 30s).",
+                level="success",
+            )
+            if self._clipboard_clear_after_id:
+                try:
+                    self.root.after_cancel(self._clipboard_clear_after_id)
+                except tk.TclError:
+                    pass
+            self._clipboard_clear_after_id = self.root.after(
+                CLIPBOARD_AUTO_CLEAR_MS, self._auto_clear_clipboard
+            )
+        else:
+            self._set_banner(
+                f"A senha da rede '{self.current_detail.ssid}' foi copiada para a área de transferência.",
+                level="success",
+            )
+
         if self._feedback_after_id:
             try:
                 self.root.after_cancel(self._feedback_after_id)
@@ -629,12 +752,31 @@ class WifiKeyFinderApp:
             2200, lambda: self.copy_pwd_btn.configure(text="Copiar senha")
         )
 
+    def _auto_clear_clipboard(self) -> None:
+        """Limpa a área de transferência se ela ainda contiver a senha copiada."""
+        if not self._last_copied_value:
+            return
+        try:
+            current_clip = self.root.clipboard_get()
+            if current_clip == self._last_copied_value:
+                self.root.clipboard_clear()
+                self.root.update()
+                self._set_banner(
+                    "Área de transferência limpa automaticamente por segurança.",
+                    level="info",
+                )
+        except tk.TclError:
+            pass
+        finally:
+            self._last_copied_value = None
+            self._clipboard_clear_after_id = None
+
 
 def run_cli_check(use_demo: bool = False) -> int:
     """Executa uma verificação de diagnóstico não-interativa (para testes no terminal)."""
     service = build_demo_service() if use_demo else WlanService()
     mode_label = "MODO DEMONSTRAÇÃO" if use_demo else "AMBIENTE REAL DO WINDOWS"
-    print(f"=== {APP_TITLE} ({mode_label}) ===")
+    print(f"=== {APP_TITLE} v{APP_VERSION} ({mode_label}) ===")
     res = service.list_profiles()
     print(f"Status da listagem : {res.status.value}")
     print(f"Mensagem           : {res.message}")

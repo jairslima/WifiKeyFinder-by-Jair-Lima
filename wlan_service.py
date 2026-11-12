@@ -48,6 +48,7 @@ class ProfileDetailResult:
     ssid: str = ""
     auth_type: str = ""
     cipher_type: str = ""
+    connection_mode: str = ""
     password: Optional[str] = None
     message: str = ""
 
@@ -122,7 +123,7 @@ def default_command_runner(args: List[str]) -> Tuple[int, bytes, bytes]:
     return completed.returncode, completed.stdout or b"", completed.stderr or b""
 
 
-# Padrões de erro conhecidos em múltiplos idiomas (PT-BR, EN-US, ES)
+# Padrões de erro conhecidos em múltiplos idiomas (PT-BR, EN-US, ES, FR, DE, IT)
 _NO_INTERFACE_PATTERNS = (
     r"n.o h. nenhuma interface sem fio",
     r"there is no wireless interface",
@@ -155,6 +156,15 @@ _PROFILE_ITEM_LABELS = (
     r"perfil de todos los usuarios",
     r"perfil de pol.tica de grupo",
     r"group policy profile",
+    r"profil tous les utilisateurs",
+    r"alle benutzerprofile",
+)
+
+# Cabeçalhos das seções de metadados iniciais que NÃO são itens de perfil no fallback
+_NON_PROFILE_HEADER_LABELS = (
+    r"perfis na interface",
+    r"profiles on interface",
+    r"perfiles en la interfaz",
 )
 
 # Rótulos conhecidos nos detalhes do perfil (`netsh wlan show profile name=X key=clear`)
@@ -162,18 +172,24 @@ _KEY_CONTENT_LABELS = (
     r"conte.do da chave",
     r"key content",
     r"contenido de la clave",
+    r"contenu de la cl.",
+    r"schl.sselinhalt",
 )
 
 _SECURITY_KEY_LABELS = (
     r"chave de seguran.a",
     r"security key",
     r"clave de seguridad",
+    r"cl. de s.curit.",
+    r"sicherheitsschl.ssel",
 )
 
 _AUTH_LABELS = (
     r"autentica..o",
     r"authentication",
     r"autenticaci.n",
+    r"authentification",
+    r"authentifizierung",
 )
 
 _CIPHER_LABELS = (
@@ -181,12 +197,21 @@ _CIPHER_LABELS = (
     r"cifra",
     r"cipher",
     r"cifrado",
+    r"chiffrement",
+    r"verschl.sselung",
+)
+
+_CONNECTION_MODE_LABELS = (
+    r"modo de conex.o",
+    r"connection mode",
+    r"modo de conexi.n",
 )
 
 _SSID_NAME_LABELS = (
     r"nome do ssid",
     r"ssid name",
     r"nombre del ssid",
+    r"nom du ssid",
 )
 
 _ABSENT_VALUES = (
@@ -282,6 +307,24 @@ class WlanService:
             if not value:
                 continue
             if _matches_any(label, _PROFILE_ITEM_LABELS):
+                if value not in seen:
+                    seen.add(value)
+                    profiles.append(value)
+
+        # Fallback independente de idioma para Windows em outros idiomas:
+        # no `netsh wlan show profiles`, linhas indentadas com ` : ` que não são cabeçalhos
+        if not profiles and returncode == 0:
+            for raw_line in output.splitlines():
+                if not raw_line.startswith((" ", "\t")):
+                    continue
+                parsed = _split_label_value(raw_line)
+                if not parsed:
+                    continue
+                label, value = parsed
+                if not value or value.startswith("<") and value.endswith(">"):
+                    continue
+                if _matches_any(label, _NON_PROFILE_HEADER_LABELS):
+                    continue
                 if value not in seen:
                     seen.add(value)
                     profiles.append(value)
@@ -398,6 +441,7 @@ class WlanService:
         ssid = profile_name
         auth_type = ""
         cipher_type = ""
+        connection_mode = ""
         security_key_state = ""
         key_content: Optional[str] = None
 
@@ -417,6 +461,8 @@ class WlanService:
                 auth_type = value
             elif _matches_any(label, _CIPHER_LABELS) and not cipher_type:
                 cipher_type = value
+            elif _matches_any(label, _CONNECTION_MODE_LABELS) and not connection_mode:
+                connection_mode = value
             elif _matches_any(label, _SECURITY_KEY_LABELS):
                 security_key_state = value
             elif _matches_any(label, _KEY_CONTENT_LABELS):
@@ -429,6 +475,7 @@ class WlanService:
                 ssid=ssid,
                 auth_type=auth_type or "WPA2/WPA3",
                 cipher_type=cipher_type or "CCMP",
+                connection_mode=connection_mode,
                 password=key_content,
                 message="Senha localizada com sucesso no perfil deste computador.",
             )
@@ -456,6 +503,7 @@ class WlanService:
             ssid=ssid,
             auth_type=auth_type or "Não informado",
             cipher_type=cipher_type or "Não informado",
+            connection_mode=connection_mode,
             password=None,
             message=reason,
         )

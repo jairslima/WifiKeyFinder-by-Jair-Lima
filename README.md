@@ -15,18 +15,25 @@ A transparência e a segurança local são princípios inegociáveis deste proje
 2. **Nenhuma chamada de rede (100% Offline):**
    O aplicativo não importa bibliotecas de rede (`requests`, `urllib`, `socket`, `http`) e não realiza nenhuma conexão externa. As redes e senhas lidas **jamais** são enviadas para servidores, APIs, serviços de telemetria ou analytics. Tudo roda e permanece exclusivamente na memória local do seu computador.
 3. **Sem coleta oculta, backdoors ou exposição acidental:**
-   Não há qualquer backdoor, telemetria oculta, gravação em arquivos de log ou coleta de dados além do que a tela mostra ao próprio usuário. Além disso, por proteção visual contra terceiros (*shoulder surfing*), **a senha nunca é exibida por padrão**: ao selecionar uma rede, a senha permanece mascarada (`••••••••••••••••`) até que você clique explicitamente no botão **"Mostrar senha"**.
+   Não há qualquer backdoor, telemetria oculta, gravação em arquivos de log ou coleta de dados além do que a tela mostra ao próprio usuário. Além disso:
+   - **Ocultação por padrão:** Ao selecionar uma rede, a senha permanece mascarada (`••••••••••••••••`) até que você clique explicitamente no botão **"Mostrar senha"**.
+   - **Proteção da Área de Transferência:** Ao copiar uma senha, o aplicativo oferece limpeza automática da área de transferência após 30 segundos (ativada por padrão) para evitar que a senha fique exposta no `Ctrl+V`.
 
 ---
 
 ## Funcionalidades
 
-- **Lista de redes salvas à esquerda:** Exibe todos os perfis de Wi-Fi gravados no Windows, com campo de filtro instantâneo para localizar rapidamente o nome da rede.
-- **Painel de detalhes à direita:** Mostra o nome da rede (SSID), o tipo de segurança/autenticação (ex.: WPA2-Personal, WPA3-Personal, Aberta) e o estado da senha.
-- **Ocultação por padrão:** A senha sempre inicia oculta e volta a ficar oculta automaticamente ao trocar de rede selecionada.
+- **Lista de redes salvas à esquerda:** Exibe todos os perfis de Wi-Fi gravados no Windows, com campo de filtro instantâneo e botão **Limpar** para localizar rapidamente o nome da rede.
+- **Painel de detalhes à direita:** Mostra o nome da rede (SSID), o tipo de segurança/autenticação (ex.: WPA2-Personal, WPA3-Personal, Aberta), o modo de conexão e o estado da senha.
+- **Ocultação por padrão:** A senha sempre inicia oculta e volta a ficar oculta automaticamente ao trocar de rede selecionada ou ao pressionar `Esc`.
 - **Botão Mostrar / Ocultar senha:** Revela ou esconde a senha gravada com um único clique.
-- **Botão Copiar senha:** Copia a chave para a área de transferência do Windows com confirmação visual imediata.
-- **Suporte completo a acentuação (UTF-8 / CP850 / CP1252):** Preserva corretamente nomes de redes e senhas com acentos (`ç`, `ã`, `é`), espaços e caracteres especiais.
+- **Botão Copiar senha e Copiar nome:** Copia a chave (ou o SSID) para a área de transferência do Windows com confirmação visual imediata e limpeza automática opcional após 30s.
+- **Suporte completo a acentuação e múltiplos idiomas (UTF-8 / CP850 / CP1252):** Preserva corretamente nomes de redes e senhas com acentos (`ç`, `ã`, `é`), dois-pontos (`:`), espaços e caracteres especiais, funcionando em instalações do Windows em Português, Inglês, Espanhol, Francês, Alemão, Italiano e outros idiomas.
+- **Atalhos de teclado:**
+  - `F5`: Atualiza a lista de redes salvas.
+  - `Ctrl+F`: Foca no campo de filtro.
+  - `Ctrl+C`: Copia a senha da rede selecionada.
+  - `Esc`: Limpa o filtro ativo ou volta a ocultar a senha caso esteja visível.
 - **Mensagens de diagnóstico claras:** Informa de maneira compreensível quando uma rede é aberta (sem senha salva), quando não há redes salvas no PC, quando o computador não possui adaptador Wi-Fi ativo ou quando o Windows exige permissão adicional.
 
 ---
@@ -63,7 +70,7 @@ O executável estará pronto em `dist\WiFi Key Finder by Jair Lima.exe`.
 
 1. Abra o **WiFi Key Finder by Jair Lima**.
 2. Na lista à esquerda (**Redes Salvas no PC**), clique sobre a rede Wi-Fi desejada (você também pode digitar parte do nome no campo **Filtrar**).
-3. No painel à direita (**Detalhes da Rede Selecionada**), confira o nome (SSID) e o tipo de autenticação.
+3. No painel à direita (**Detalhes da Rede Selecionada**), confira o nome (SSID), o modo de conexão e o tipo de autenticação.
 4. Clique em **"Mostrar senha"** para revelar a senha na tela, ou clique diretamente em **"Copiar senha"** para copiá-la para a área de transferência.
 5. Pressione **F5** ou clique em **"Atualizar (F5)"** caso tenha acabado de se conectar a uma nova rede.
 
