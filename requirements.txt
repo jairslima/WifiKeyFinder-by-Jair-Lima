@@ -1,0 +1,3 @@
+# Sem dependências externas de tempo de execução.
+# O WiFi Key Finder by Jair Lima utiliza exclusivamente a biblioteca padrão do Python (tkinter, subprocess, ctypes, re, os)
+# para garantir superfície zero de vulnerabilidades em pacotes de terceiros e nenhuma chamada de rede.
