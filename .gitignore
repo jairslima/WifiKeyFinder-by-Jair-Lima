@@ -36,3 +36,6 @@ credentials.*
 Thumbs.db
 .vscode/
 .idea/
+
+# Seguranca - auditoria automatica
+*.p12
